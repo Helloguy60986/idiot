@@ -1,0 +1,468 @@
+local pls=game:GetService("Players")
+local ws=game:GetService("Workspace")
+
+local dmg=15
+local cd=3
+local spd=30
+
+local spawns={
+	Vector3.new(-153,1.5,-108),
+	Vector3.new(-20,1.5,42),
+	Vector3.new(159,1.5,5)
+}
+
+
+local function cp(plr,pos,id)
+
+	local ch=plr.Character or plr.CharacterAdded:Wait()
+	if not ch then return end
+
+	ch.Archivable=true
+
+	local c=ch:Clone()
+
+	c.Name=plr.Name.."_still_"..id
+	c.Parent=ws
+
+	local hr=c:FindFirstChild("HumanoidRootPart")
+
+	if hr then
+		hr.CFrame=CFrame.new(pos)
+	end
+
+
+	for _,v in pairs(c:GetDescendants()) do
+		if v:IsA("Script") or v:IsA("LocalScript") then
+			v:Destroy()
+		end
+	end
+
+
+	local h=c:FindFirstChildOfClass("Humanoid")
+
+	if h then
+
+		h.DisplayDistanceType=Enum.HumanoidDisplayDistanceType.None
+		h.AutoRotate=false
+		h.WalkSpeed=spd
+
+		if not h:FindFirstChildOfClass("Animator") then
+			Instance.new("Animator",h)
+		end
+	end
+
+	return c
+end
+
+
+
+local function copyAnim(n,plr)
+
+	local ch=plr.Character
+
+	if not ch then return end
+
+	local a=ch:FindFirstChild("Animate")
+
+	if a then
+
+		local x=a:Clone()
+		x.Parent=n
+
+		if x:IsA("LocalScript") then
+			x.Disabled=false
+		end
+	end
+end
+
+
+
+local function vis(a,b)
+
+	local ar=a:FindFirstChild("HumanoidRootPart")
+	local br=b:FindFirstChild("HumanoidRootPart")
+
+	if not ar or not br then
+		return false
+	end
+
+
+	local rp=RaycastParams.new()
+
+	rp.FilterType=Enum.RaycastFilterType.Exclude
+	rp.FilterDescendantsInstances={a}
+
+
+	local r=ws:Raycast(
+		ar.Position,
+		br.Position-ar.Position,
+		rp
+	)
+
+
+	if r then
+		return r.Instance:IsDescendantOf(b)
+	end
+
+	return true
+end
+
+
+
+local function face(n,pos)
+
+	local hr=n:FindFirstChild("HumanoidRootPart")
+
+	if not hr then return end
+
+
+	local d=pos-hr.Position
+
+	d=Vector3.new(
+		d.X,
+		0,
+		d.Z
+	)
+
+
+	if d.Magnitude>0 then
+
+		hr.CFrame=CFrame.lookAt(
+			hr.Position,
+			hr.Position+d
+		)
+	end
+end
+
+
+
+local function attack(n)
+
+	if n:GetAttribute("cool") then
+		return
+	end
+
+
+	n:SetAttribute("cool",true)
+
+
+	local hr=n:FindFirstChild("HumanoidRootPart")
+
+	if not hr then
+		return
+	end
+
+
+	local hit={}
+
+
+	local con=hr.Touched:Connect(function(p)
+
+		local c=p.Parent
+		local h=c and c:FindFirstChildOfClass("Humanoid")
+
+
+		if h and c~=n and not hit[c] then
+
+			hit[c]=true
+			h:TakeDamage(dmg)
+
+		end
+	end)
+
+
+	task.wait(cd)
+
+
+	if con then
+		con:Disconnect()
+	end
+
+
+	n:SetAttribute("cool",false)
+end
+
+
+
+local function move(n,pos)
+
+	local h=n:FindFirstChildOfClass("Humanoid")
+	local hr=n:FindFirstChild("HumanoidRootPart")
+
+	if not h or not hr then return end
+
+
+	while n.Parent and (hr.Position-pos).Magnitude>5 do
+
+		h.WalkSpeed=spd
+
+		face(n,pos)
+
+
+		h:Move(
+			(pos-hr.Position).Unit,
+			false
+		)
+
+
+		task.wait()
+	end
+end
+
+
+
+local function chase(n,t)
+
+	local h=n:FindFirstChildOfClass("Humanoid")
+	local hr=n:FindFirstChild("HumanoidRootPart")
+
+
+	if not h or not hr then return end
+
+
+	while n.Parent and t and t.Parent and vis(n,t) do
+
+		local tr=t:FindFirstChild("HumanoidRootPart")
+
+		if not tr then break end
+
+
+		h.WalkSpeed=spd
+
+
+		local d=(tr.Position-hr.Position).Magnitude
+
+
+		face(
+			n,
+			tr.Position
+		)
+
+
+		if d<=5 then
+
+			attack(n)
+			return
+
+		end
+
+
+		h:Move(
+			(tr.Position-hr.Position).Unit,
+			false
+		)
+
+
+		task.wait()
+	end
+end
+
+
+
+local function wander(n)
+
+	local hr=n:FindFirstChild("HumanoidRootPart")
+
+	if not hr then return end
+
+
+	move(
+		n,
+		hr.Position+
+			Vector3.new(
+				math.random(-70,70),
+				0,
+				math.random(-70,70)
+			)
+	)
+end
+
+
+
+local function find(n)
+
+	local best=nil
+	local md=120
+
+	local hr=n:FindFirstChild("HumanoidRootPart")
+
+	if not hr then return end
+
+
+	for _,p in pairs(pls:GetPlayers()) do
+
+		local c=p.Character
+
+
+		if c and c:FindFirstChild("HumanoidRootPart") then
+
+			local d=(
+				c.HumanoidRootPart.Position-
+					hr.Position
+			).Magnitude
+
+
+			if d<md and vis(n,c) then
+
+				md=d
+				best=c
+
+			end
+		end
+	end
+
+
+	return best
+end
+
+
+
+local function ai(n)
+
+	local state=1
+	local tar=nil
+	local last=nil
+
+
+	while n.Parent do
+
+
+		if state==1 then
+
+
+			tar=find(n)
+
+
+			if tar then
+
+				state=2
+
+			else
+
+				wander(n)
+
+			end
+
+
+
+		elseif state==2 then
+
+
+			if tar and tar.Parent then
+
+
+				local hr=tar:FindFirstChild("HumanoidRootPart")
+
+
+				if hr then
+
+
+					if vis(n,tar) then
+
+
+						last=hr.Position
+
+						chase(n,tar)
+
+
+					else
+
+						state=3
+
+					end
+				end
+
+
+			else
+
+				state=1
+
+			end
+
+
+
+		elseif state==3 then
+
+
+			if last then
+
+
+				move(n,last)
+
+
+				local nt=find(n)
+
+
+				if nt then
+
+					tar=nt
+					state=2
+
+				else
+
+					state=1
+
+				end
+
+
+			else
+
+				state=1
+
+			end
+		end
+
+
+		task.wait(.1)
+
+	end
+end
+
+
+
+local function setup(plr)
+
+	plr.CharacterAdded:Connect(function()
+
+		task.wait(3)
+
+
+		for i,pos in ipairs(spawns) do
+
+			local n=cp(
+				plr,
+				pos,
+				i
+			)
+
+
+			if n then
+
+				copyAnim(
+					n,
+					plr
+				)
+
+
+				task.spawn(
+					ai,
+					n
+				)
+
+			end
+
+
+			task.wait(.2)
+
+		end
+	end)
+end
+
+
+
+for _,p in pairs(pls:GetPlayers()) do
+	setup(p)
+end
+
+
+pls.PlayerAdded:Connect(setup)
